@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 const userSchema = new mongoose.Schema(
   {
@@ -41,6 +42,14 @@ const userSchema = new mongoose.Schema(
       select: false,
       default: null,
     },
+    resetPasswordToken: {
+      type: String,
+      select: false,
+    },
+    resetPasswordExpire: {
+      type: Date,
+      select: false,
+    },
     role: {
       type: String,
       enum: ['customer', 'admin'],
@@ -71,11 +80,30 @@ userSchema.methods.comparePassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
 
+// Generate and hash password reset token
+userSchema.methods.createPasswordResetToken = function () {
+  // Generate random 32-byte hex token
+  const resetToken = crypto.randomBytes(32).toString('hex');
+
+  // Hash token and set to resetPasswordToken field
+  this.resetPasswordToken = crypto
+    .createHash('sha256')
+    .update(resetToken)
+    .digest('hex');
+
+  // Set expire to 1 hour from now
+  this.resetPasswordExpire = Date.now() + 60 * 60 * 1000;
+
+  return resetToken;
+};
+
 // Safe JSON serialization without exposing password or sensitive tokens
 userSchema.methods.toJSON = function () {
   const user = this.toObject();
   delete user.password;
   delete user.shopifyCustomerAccessToken;
+  delete user.resetPasswordToken;
+  delete user.resetPasswordExpire;
   return user;
 };
 

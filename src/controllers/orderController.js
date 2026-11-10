@@ -1,5 +1,6 @@
 import User from '../models/userModel.js';
 import { fetchCustomerOrders } from '../services/shopifyService.js';
+import { sendOrderConfirmationEmail } from '../services/emailService.js';
 
 /**
  * @desc    Get authenticated customer's Shopify orders
@@ -59,6 +60,44 @@ export const getCustomerOrders = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Send order confirmation email
+ * @route   POST /api/orders/confirm
+ * @access  Protected (or Optional with valid email)
+ */
+export const confirmOrderEmail = async (req, res, next) => {
+  try {
+    const { orderNumber, items, shippingAddress, subtotal, shippingCost, grandTotal } = req.body;
+    const user = req.user;
+
+    const emailToSend = user?.email || req.body.email;
+    const nameToSend = user?.fullName || req.body.fullName;
+
+    if (!emailToSend) {
+      return res.status(400).json({ success: false, message: 'Recipient email is required.' });
+    }
+
+    await sendOrderConfirmationEmail({
+      to: emailToSend,
+      fullName: nameToSend,
+      orderNumber,
+      items: items || [],
+      shippingAddress: shippingAddress || {},
+      subtotal: subtotal || 0,
+      shippingCost: shippingCost || 0,
+      grandTotal: grandTotal || 0,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Order confirmation email dispatched successfully.',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export default {
   getCustomerOrders,
+  confirmOrderEmail,
 };

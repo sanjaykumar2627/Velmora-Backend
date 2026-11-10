@@ -282,11 +282,53 @@ export const createCart = async (lines = [], customerAccessToken = null) => {
     }
   `;
 
+  // Normalize and resolve lines so that Product IDs are automatically mapped to valid ProductVariant IDs
+  const resolvedLines = await Promise.all(
+    lines.map(async (item) => {
+      let merchandiseId = item.merchandiseId || item.variantId;
+      const quantity = parseInt(item.quantity, 10) || 1;
+
+      // If a Product ID was supplied instead of a ProductVariant ID:
+      if (merchandiseId && merchandiseId.includes('/Product/') && !merchandiseId.includes('/ProductVariant/')) {
+        try {
+          const resolveQuery = `
+            query ResolveVariant($id: ID!) {
+              node(id: $id) {
+                ... on Product {
+                  variants(first: 1) {
+                    edges {
+                      node {
+                        id
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          `;
+          const nodeData = await shopifyFetch({
+            query: resolveQuery,
+            variables: { id: merchandiseId },
+          });
+          const firstVariantId = nodeData?.node?.variants?.edges?.[0]?.node?.id;
+          if (firstVariantId) {
+            console.log(`[Shopify Cart] Converted Product ID ${merchandiseId} to Variant ID ${firstVariantId}`);
+            merchandiseId = firstVariantId;
+          }
+        } catch (resolveErr) {
+          console.warn('[Cart Resolution Warning]', resolveErr.message);
+        }
+      }
+
+      return {
+        merchandiseId,
+        quantity,
+      };
+    })
+  );
+
   const input = {
-    lines: lines.map((item) => ({
-      merchandiseId: item.merchandiseId || item.variantId,
-      quantity: parseInt(item.quantity, 10) || 1,
-    })),
+    lines: resolvedLines,
   };
 
   if (customerAccessToken) {
