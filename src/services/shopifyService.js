@@ -5,7 +5,7 @@
 
 const getShopifyConfig = () => {
   const domain = process.env.SHOPIFY_STORE_DOMAIN || 'etujp6-nv.myshopify.com';
-  const token = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN || 'c2bd0c6ee42403ca8f01319307abe9e9';
+  const token = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
   const apiVersion = process.env.SHOPIFY_API_VERSION || '2024-01';
 
   return {

@@ -163,6 +163,69 @@ const wrapInEmailLayout = ({ previewText, contentHtml }) => `
 `;
 
 /**
+ * 0. Send 6-digit OTP Verification Email for Account Creation
+ */
+export const sendOtpEmail = async ({ to, fullName, otp }) => {
+  try {
+    const transporter = createTransporter();
+
+    if (!transporter) {
+      console.log(`[Email Service Simulation] OTP ${otp} simulated for ${to} (${fullName}). Configure EMAIL_USER/EMAIL_PASSWORD to dispatch live.`);
+      return true;
+    }
+
+    const greetingName = fullName ? fullName.trim() : 'Valued Customer';
+
+    const contentHtml = `
+      <h2 style="color: #2B0F3A; font-size: 22px; margin-top: 0; font-weight: 600;">
+        Verify Your Email Address
+      </h2>
+      <div class="gold-divider"></div>
+      <p>
+        Hello ${greetingName},<br />
+        Thank you for starting your account registration with <strong>${BRAND_NAME}</strong>. Please use the verification code below to confirm your email and complete your sign-up.
+      </p>
+
+      <div style="background: #FAF7F2; border: 2px dashed #C8A45D; border-radius: 8px; padding: 24px 16px; margin: 28px 0; text-align: center;">
+        <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 2px; color: #8C7B8D; font-weight: 700; display: block; margin-bottom: 8px;">Your 6-Digit Verification Code</span>
+        <div style="font-family: 'Courier New', Courier, monospace; font-size: 38px; font-weight: 800; letter-spacing: 12px; color: #6B1D4F; padding-left: 12px;">
+          ${otp}
+        </div>
+      </div>
+
+      <div class="info-card" style="font-size: 13px; color: #6A5B6C;">
+        <strong style="color: #2B0F3A;">Important Security Note:</strong><br />
+        • This OTP is valid for <strong>10 minutes</strong> only.<br />
+        • For your account security, never share this code with anyone.
+      </div>
+
+      <p style="margin-top: 24px; font-size: 13px; color: #766477;">
+        If you did not attempt to register on ${BRAND_NAME}, please safely disregard this email.<br /><br />
+        Warm regards,<br />
+        <strong style="color: #2B0F3A;">The ${BRAND_NAME} Security Team</strong>
+      </p>
+    `;
+
+    const mailOptions = {
+      from: `"${BRAND_NAME} Verification" <${process.env.EMAIL_USER}>`,
+      to,
+      subject: `${otp} is your ${BRAND_NAME} verification code`,
+      html: wrapInEmailLayout({
+        previewText: `${otp} is your verification code for ${BRAND_NAME}. Valid for 10 minutes.`,
+        contentHtml,
+      }),
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`[Email Service] ✅ OTP email dispatched to ${to} (MessageId: ${info.messageId})`);
+    return true;
+  } catch (error) {
+    console.error(`[Email Service Error] Failed to send OTP email to ${to}:`, error.message);
+    return false;
+  }
+};
+
+/**
  * 1. Send Welcome Email to newly registered user
  */
 export const sendWelcomeEmail = async ({ to, fullName }) => {
@@ -413,6 +476,7 @@ export const sendOrderConfirmationEmail = async ({
 };
 
 export default {
+  sendOtpEmail,
   sendWelcomeEmail,
   sendPasswordResetEmail,
   sendOrderConfirmationEmail,

@@ -49,7 +49,7 @@ app.use(
   cors({
     origin: (origin, callback) => {
       // Allow requests with no origin (such as mobile apps, curl, Postman)
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (!origin || allowedOrigins.includes(origin) || /^https:\/\/.*\.vercel\.app$/.test(origin)) {
         return callback(null, true);
       }
       return callback(new Error(`CORS policy does not allow access from origin: ${origin}`));

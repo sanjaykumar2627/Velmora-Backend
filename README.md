@@ -85,7 +85,7 @@ cp .env.example .env
 | `JWT_SECRET` | Secret key for signing JSON Web Tokens | `velmora_super_secret_jwt_key_2026_at_least_32_chars` |
 | `FRONTEND_URL` | Allowed frontend origin for CORS | `https://velmoraindia.store` |
 | `SHOPIFY_STORE_DOMAIN` | Shopify store domain | `etujp6-nv.myshopify.com` |
-| `SHOPIFY_STOREFRONT_ACCESS_TOKEN` | Public Storefront Access Token | `c2bd0c6ee42403ca8f01319307abe9e9` |
+| `SHOPIFY_STOREFRONT_ACCESS_TOKEN` | Public Storefront Access Token | `your_shopify_storefront_access_token` |
 | `SHOPIFY_API_VERSION` | Shopify Storefront API Version | `2024-01` |
 | `EMAIL_HOST` | SMTP server host (optional) | `smtp.gmail.com` |
 | `EMAIL_PORT` | SMTP port | `587` |
@@ -185,7 +185,7 @@ The server boots on `http://localhost:5000` with live reload via `nodemon`.
    - `JWT_SECRET`: A secure random 32+ character string
    - `FRONTEND_URL`: `https://velmoraindia.store`
    - `SHOPIFY_STORE_DOMAIN`: `etujp6-nv.myshopify.com`
-   - `SHOPIFY_STOREFRONT_ACCESS_TOKEN`: `c2bd0c6ee42403ca8f01319307abe9e9`
+   - `SHOPIFY_STOREFRONT_ACCESS_TOKEN`: `your_shopify_storefront_access_token`
    - `SHOPIFY_API_VERSION`: `2024-01`
 7. Click **Create Web Service**. Your service URL will be something like `https://velmora-backend.onrender.com`.
 

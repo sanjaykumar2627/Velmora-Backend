@@ -50,6 +50,14 @@ const userSchema = new mongoose.Schema(
       type: Date,
       select: false,
     },
+    otp: {
+      type: String,
+      select: false,
+    },
+    otpExpire: {
+      type: Date,
+      select: false,
+    },
     role: {
       type: String,
       enum: ['customer', 'admin'],
@@ -57,7 +65,7 @@ const userSchema = new mongoose.Schema(
     },
     isVerified: {
       type: Boolean,
-      default: true,
+      default: false,
     },
   },
   {
@@ -97,6 +105,14 @@ userSchema.methods.createPasswordResetToken = function () {
   return resetToken;
 };
 
+// Generate 6-digit verification OTP
+userSchema.methods.generateOTP = function () {
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  this.otp = otp;
+  this.otpExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+  return otp;
+};
+
 // Safe JSON serialization without exposing password or sensitive tokens
 userSchema.methods.toJSON = function () {
   const user = this.toObject();
@@ -104,6 +120,8 @@ userSchema.methods.toJSON = function () {
   delete user.shopifyCustomerAccessToken;
   delete user.resetPasswordToken;
   delete user.resetPasswordExpire;
+  delete user.otp;
+  delete user.otpExpire;
   return user;
 };
 
