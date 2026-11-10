@@ -61,11 +61,13 @@ export const registerUser = async (req, res, next) => {
     const otp = user.generateOTP();
     await user.save();
 
-    // 4. Send OTP email to Gmail
-    await sendOtpEmail({
+    // 4. Dispatch OTP email asynchronously in background (avoids frontend timeout)
+    sendOtpEmail({
       to: user.email,
       fullName: user.fullName,
       otp,
+    }).catch((err) => {
+      console.error(`[Email Service Error] Failed to send OTP to ${user.email}:`, err.message);
     });
 
     return res.status(200).json({
@@ -192,10 +194,12 @@ export const resendOtp = async (req, res, next) => {
     const otp = user.generateOTP();
     await user.save();
 
-    await sendOtpEmail({
+    sendOtpEmail({
       to: user.email,
       fullName: user.fullName,
       otp,
+    }).catch((err) => {
+      console.error(`[Email Service Error] Failed to resend OTP to ${user.email}:`, err.message);
     });
 
     return res.status(200).json({
@@ -346,15 +350,10 @@ export const forgotPassword = async (req, res, next) => {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
 
-    // Send email
-    try {
-      await sendPasswordResetEmail({ to: user.email, resetUrl });
-    } catch (err) {
-      user.resetPasswordToken = undefined;
-      user.resetPasswordExpire = undefined;
-      await user.save({ validateBeforeSave: false });
-      return res.status(500).json({ success: false, message: 'Could not send reset email. Please try again later.' });
-    }
+    // Dispatch password reset email asynchronously in background
+    sendPasswordResetEmail({ to: user.email, resetUrl }).catch((err) => {
+      console.error(`[Email Service Error] Failed to send password reset email to ${user.email}:`, err.message);
+    });
 
     return res.status(200).json({
       success: true,

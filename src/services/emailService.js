@@ -4,14 +4,30 @@ import nodemailer from 'nodemailer';
  * Configure Nodemailer transport
  */
 const createTransporter = () => {
-  const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
-  const port = parseInt(process.env.EMAIL_PORT, 10) || 587;
   const user = process.env.EMAIL_USER;
   const pass = process.env.EMAIL_PASSWORD;
 
   if (!user || !pass) {
     return null;
   }
+
+  const isGmail = !process.env.EMAIL_HOST || process.env.EMAIL_HOST.includes('gmail');
+
+  if (isGmail) {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user,
+        pass,
+      },
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 10000,
+    });
+  }
+
+  const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
+  const port = parseInt(process.env.EMAIL_PORT, 10) || 587;
 
   return nodemailer.createTransport({
     host,
@@ -21,6 +37,9 @@ const createTransporter = () => {
       user,
       pass,
     },
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000,
   });
 };
 

@@ -77,7 +77,7 @@ export const confirmOrderEmail = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Recipient email is required.' });
     }
 
-    await sendOrderConfirmationEmail({
+    sendOrderConfirmationEmail({
       to: emailToSend,
       fullName: nameToSend,
       orderNumber,
@@ -86,6 +86,8 @@ export const confirmOrderEmail = async (req, res, next) => {
       subtotal: subtotal || 0,
       shippingCost: shippingCost || 0,
       grandTotal: grandTotal || 0,
+    }).catch((err) => {
+      console.error(`[Order Email Error] Failed to send order email to ${emailToSend}:`, err.message);
     });
 
     return res.status(200).json({
