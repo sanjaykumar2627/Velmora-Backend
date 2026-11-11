@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import User from '../models/userModel.js';
 import { generateTokenAndSetCookie, clearAuthCookie } from '../utils/generateToken.js';
 import { validateRegistration, validateLogin } from '../utils/validators.js';
-import { sendOtpEmail, sendWelcomeEmail, sendPasswordResetEmail } from '../services/emailService.js';
+import { sendOtpEmail, sendWelcomeEmail, sendPasswordResetEmail, sendTestEmailDiagnostic } from '../services/emailService.js';
 import { customerAccessTokenCreate } from '../services/shopifyService.js';
 
 /**
@@ -416,6 +416,28 @@ export const resetPassword = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Diagnostic endpoint to test email delivery from live server
+ * @route   GET /api/auth/test-email
+ * @access  Public
+ */
+export const testEmailDiagnostic = async (req, res, next) => {
+  try {
+    const targetEmail = req.query.to || process.env.EMAIL_USER;
+    if (!targetEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide ?to=your_email@example.com in the URL query parameter.',
+      });
+    }
+
+    const result = await sendTestEmailDiagnostic(targetEmail);
+    return res.status(result.success ? 200 : 500).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export default {
   registerUser,
   verifyOtp,
@@ -425,4 +447,5 @@ export default {
   getMe,
   forgotPassword,
   resetPassword,
+  testEmailDiagnostic,
 };

@@ -8,6 +8,7 @@ import {
   getMe,
   forgotPassword,
   resetPassword,
+  testEmailDiagnostic,
 } from '../controllers/authController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { authLimiter } from '../middleware/rateLimitMiddleware.js';
@@ -15,6 +16,7 @@ import { authLimiter } from '../middleware/rateLimitMiddleware.js';
 const router = express.Router();
 
 // Public routes with rate limiting
+router.get('/test-email', testEmailDiagnostic);
 router.post('/register', authLimiter, registerUser);
 router.post('/verify-otp', authLimiter, verifyOtp);
 router.post('/resend-otp', authLimiter, resendOtp);

@@ -1,52 +1,42 @@
 import 'dotenv/config';
-import nodemailer from 'nodemailer';
+import { sendTestEmailDiagnostic } from './src/services/emailService.js';
 
-async function testSMTP() {
-  const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
-  const port = parseInt(process.env.EMAIL_PORT, 10) || 587;
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASSWORD;
+async function main() {
+  const targetEmail = process.argv[2] || process.env.EMAIL_USER;
 
-  console.log('--- Testing SMTP Configuration ---');
-  console.log(`Host: ${host}`);
-  console.log(`Port: ${port}`);
-  console.log(`User: ${user ? user : '[MISSING]'}`);
-  console.log(`Pass: ${pass ? '********' : '[MISSING]'}`);
+  console.log('==============================================');
+  console.log('   VELMORA EMAIL SERVICE DIAGNOSTIC TEST      ');
+  console.log('==============================================');
+  console.log(`Target Recipient : ${targetEmail || '[NOT SET]'}`);
+  console.log(`BREVO_API_KEY    : ${process.env.BREVO_API_KEY ? 'CONFIGURED ✅' : '[NOT SET]'}`);
+  console.log(`RESEND_API_KEY   : ${process.env.RESEND_API_KEY ? 'CONFIGURED ✅' : '[NOT SET]'}`);
+  console.log(`EMAIL_USER       : ${process.env.EMAIL_USER ? process.env.EMAIL_USER : '[NOT SET]'}`);
+  console.log(`EMAIL_PASSWORD   : ${process.env.EMAIL_PASSWORD ? '********' : '[NOT SET]'}`);
+  console.log(`EMAIL_HOST       : ${process.env.EMAIL_HOST || 'smtp.gmail.com'}`);
+  console.log('----------------------------------------------\n');
 
-  if (!user || !pass) {
-    console.error('\n❌ ERROR: EMAIL_USER ya EMAIL_PASSWORD .env me set nahi hai!');
-    console.log('Kripya .env me EMAIL_USER aur EMAIL_PASSWORD daalein aur dobara run karein.');
+  if (!targetEmail) {
+    console.error('❌ Please specify a recipient email or set EMAIL_USER in .env.');
+    console.error('Usage: node test-email.js user@example.com\n');
     process.exit(1);
   }
 
-  const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure: port === 465,
-    auth: {
-      user,
-      pass,
-    },
-  });
+  console.log(`Dispatching diagnostic test email to ${targetEmail}...`);
+  const result = await sendTestEmailDiagnostic(targetEmail);
 
-  try {
-    console.log('\nVerifying SMTP connection...');
-    await transporter.verify();
-    console.log('✅ SMTP connection successful!');
+  console.log('\n--- Diagnostic Result ---');
+  console.log(JSON.stringify(result, null, 2));
 
-    console.log(`\nSending test email to ${user}...`);
-    const info = await transporter.sendMail({
-      from: `"Velmora Test" <${user}>`,
-      to: user,
-      subject: 'Velmora SMTP Test Email',
-      text: 'Badhai ho! Aapka SMTP email setup bilkul sahi kaam kar raha hai.',
-      html: '<h3>Badhai ho! 🎉</h3><p>Aapka Velmora SMTP email setup bilkul sahi tareeqe se configure ho gaya hai.</p>',
-    });
-
-    console.log(`✅ Test email sent successfully! MessageId: ${info.messageId}`);
-  } catch (error) {
-    console.error('\n❌ SMTP Error:', error.message);
+  if (result.success) {
+    console.log('\n✅ TEST PASSED: Email successfully delivered!');
+  } else {
+    console.log('\n❌ TEST FAILED: Email could not be sent.');
+    if (result.hint) {
+      console.log(`💡 Hint: ${result.hint}`);
+    }
   }
 }
 
-testSMTP();
+main().catch((err) => {
+  console.error('Fatal error:', err);
+});
