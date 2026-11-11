@@ -17,6 +17,7 @@ import userRoutes from './routes/userRoutes.js';
 import wishlistRoutes from './routes/wishlistRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import shopifyRoutes from './routes/shopifyRoutes.js';
+import contactRoutes from './routes/contactRoutes.js';
 
 // Import Middleware
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
@@ -24,6 +25,9 @@ import { apiLimiter } from './middleware/rateLimitMiddleware.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Trust reverse proxy (required for Render / cloud deployment rate limiting)
+app.set('trust proxy', 1);
 
 // Connect to Database
 connectDB();
@@ -108,6 +112,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/shopify', shopifyRoutes);
+app.use('/api/contact', contactRoutes);
 
 // Root greeting
 app.get('/', (req, res) => {

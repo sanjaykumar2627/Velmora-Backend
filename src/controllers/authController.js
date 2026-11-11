@@ -35,46 +35,39 @@ export const registerUser = async (req, res, next) => {
 
     // 2. Check if user already exists
     let user = await User.findOne({ email: normalizedEmail });
-    if (user && user.isVerified) {
+    if (user) {
       return res.status(400).json({
         success: false,
         message: 'An account with this email address already exists. Please log in.',
       });
     }
 
-    if (user && !user.isVerified) {
-      // Re-register unverified user
-      user.fullName = fullName.trim();
-      user.password = password; // Hashed by pre('save')
-      user.phoneNumber = effectivePhone.trim();
-    } else {
-      user = new User({
-        fullName: fullName.trim(),
-        email: normalizedEmail,
-        password,
-        phoneNumber: effectivePhone.trim(),
-        isVerified: false,
-      });
-    }
-
-    // 3. Generate 6-digit OTP
-    const otp = user.generateOTP();
-    await user.save();
-
-    // 4. Dispatch OTP email asynchronously in background (avoids frontend timeout)
-    sendOtpEmail({
-      to: user.email,
-      fullName: user.fullName,
-      otp,
-    }).catch((err) => {
-      console.error(`[Email Service Error] Failed to send OTP to ${user.email}:`, err.message);
+    user = new User({
+      fullName: fullName.trim(),
+      email: normalizedEmail,
+      password,
+      phoneNumber: effectivePhone.trim(),
+      isVerified: true,
     });
 
-    return res.status(200).json({
+    await user.save();
+
+    // Dispatch welcome email asynchronously in background
+    sendWelcomeEmail({
+      to: user.email,
+      fullName: user.fullName,
+    }).catch((err) => {
+      console.warn('[Email Service Notice] Welcome email failed:', err.message);
+    });
+
+    // Generate JWT & set HTTP-only cookie for instant login
+    const token = generateTokenAndSetCookie(res, user._id, user.role);
+
+    return res.status(201).json({
       success: true,
-      requiresVerification: true,
-      email: user.email,
-      message: 'A 6-digit verification code has been dispatched to your email. Please verify to complete your account setup.',
+      message: 'Account created successfully! Welcome to Velmora.',
+      user: user.toJSON(),
+      token,
     });
   } catch (error) {
     next(error);
@@ -253,20 +246,10 @@ export const loginUser = async (req, res, next) => {
       });
     }
 
-    // Check if account has completed email OTP verification
+    // Auto-verify user on successful password match if needed
     if (!user.isVerified) {
-      const otp = user.generateOTP();
-      await user.save();
-      sendOtpEmail({ to: user.email, fullName: user.fullName, otp }).catch((err) =>
-        console.warn('[OTP Notice on Login]', err.message)
-      );
-
-      return res.status(403).json({
-        success: false,
-        requiresVerification: true,
-        email: user.email,
-        message: 'Your email address is not verified yet. We have sent a 6-digit verification code to your Gmail.',
-      });
+      user.isVerified = true;
+      await user.save({ validateBeforeSave: false });
     }
 
     // 4. Check/Refresh Shopify Customer Token in background if supported
