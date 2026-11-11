@@ -613,6 +613,8 @@ export const fetchCustomerOrders = async (customerAccessToken) => {
               processedAt
               financialStatus
               fulfillmentStatus
+              canceledAt
+              cancelReason
               totalPrice {
                 amount
                 currencyCode
