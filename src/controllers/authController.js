@@ -3,7 +3,7 @@ import User from '../models/userModel.js';
 import { generateTokenAndSetCookie, clearAuthCookie } from '../utils/generateToken.js';
 import { validateRegistration, validateLogin } from '../utils/validators.js';
 import { sendOtpEmail, sendWelcomeEmail, sendPasswordResetEmail, sendTestEmailDiagnostic } from '../services/emailService.js';
-import { customerAccessTokenCreate } from '../services/shopifyService.js';
+import { customerAccessTokenCreate, customerCreate } from '../services/shopifyService.js';
 
 /**
  * @desc    Register a new user & dispatch 6-digit verification OTP
@@ -51,6 +51,31 @@ export const registerUser = async (req, res, next) => {
     });
 
     await user.save();
+
+    // Auto-create & link customer in Shopify Storefront
+    try {
+      const nameParts = fullName.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || firstName;
+      const shopifyCustomer = await customerCreate({
+        email: normalizedEmail,
+        password,
+        firstName,
+        lastName,
+      });
+      if (shopifyCustomer?.customer?.id) {
+        user.shopifyCustomerId = shopifyCustomer.customer.id;
+      }
+      const authRes = await customerAccessTokenCreate(normalizedEmail, password);
+      if (authRes?.customerAccessToken?.accessToken) {
+        user.shopifyCustomerAccessToken = authRes.customerAccessToken.accessToken;
+      }
+      if (user.shopifyCustomerId || user.shopifyCustomerAccessToken) {
+        await user.save({ validateBeforeSave: false });
+      }
+    } catch (shopifySyncErr) {
+      console.warn('[Shopify Customer Sync Warning]', shopifySyncErr.message);
+    }
 
     // Dispatch welcome email asynchronously in background
     sendWelcomeEmail({
@@ -254,7 +279,23 @@ export const loginUser = async (req, res, next) => {
 
     // 4. Check/Refresh Shopify Customer Token in background if supported
     try {
-      const shopifyAuth = await customerAccessTokenCreate(normalizedEmail, password);
+      let shopifyAuth = await customerAccessTokenCreate(normalizedEmail, password);
+      // If customer doesn't exist yet on Shopify, auto-create them and re-authenticate
+      if (!shopifyAuth?.customerAccessToken?.accessToken) {
+        const nameParts = (user.fullName || '').trim().split(' ');
+        const firstName = nameParts[0] || 'Customer';
+        const lastName = nameParts.slice(1).join(' ') || firstName;
+        const newCustomer = await customerCreate({
+          email: normalizedEmail,
+          password,
+          firstName,
+          lastName,
+        });
+        if (newCustomer?.customer?.id) {
+          user.shopifyCustomerId = newCustomer.customer.id;
+        }
+        shopifyAuth = await customerAccessTokenCreate(normalizedEmail, password);
+      }
       if (shopifyAuth?.customerAccessToken?.accessToken) {
         user.shopifyCustomerAccessToken = shopifyAuth.customerAccessToken.accessToken;
         await user.save({ validateBeforeSave: false });

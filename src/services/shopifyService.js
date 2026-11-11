@@ -651,6 +651,43 @@ export const fetchCustomerOrders = async (customerAccessToken) => {
   return data.customer || null;
 };
 
+/**
+ * Create a new customer in Shopify Storefront
+ */
+export const customerCreate = async ({ email, password, firstName = '', lastName = '' }) => {
+  const query = `
+    mutation customerCreate($input: CustomerCreateInput!) {
+      customerCreate(input: $input) {
+        customer {
+          id
+          email
+          firstName
+          lastName
+        }
+        customerUserErrors {
+          code
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  const data = await shopifyFetch({
+    query,
+    variables: {
+      input: {
+        email,
+        password,
+        firstName,
+        lastName,
+      },
+    },
+  });
+
+  return data.customerCreate || null;
+};
+
 export default {
   shopifyFetch,
   fetchProducts,
@@ -662,6 +699,7 @@ export default {
   removeCartLines,
   getCart,
   customerAccessTokenCreate,
+  customerCreate,
   customerRecover,
   fetchCustomerOrders,
 };
