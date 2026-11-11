@@ -32,3 +32,5 @@ services:
         sync: false
       - key: EMAIL_PASSWORD
         sync: false
+      - key: BREVO_API_KEY
+        sync: false
