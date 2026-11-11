@@ -5,14 +5,13 @@ async function main() {
   const targetEmail = process.argv[2] || process.env.EMAIL_USER;
 
   console.log('==============================================');
-  console.log('   VELMORA EMAIL SERVICE DIAGNOSTIC TEST      ');
+  console.log('       VELMORA SMTP CONFIGURATION TEST        ');
   console.log('==============================================');
   console.log(`Target Recipient : ${targetEmail || '[NOT SET]'}`);
-  console.log(`BREVO_API_KEY    : ${process.env.BREVO_API_KEY ? 'CONFIGURED ✅' : '[NOT SET]'}`);
-  console.log(`RESEND_API_KEY   : ${process.env.RESEND_API_KEY ? 'CONFIGURED ✅' : '[NOT SET]'}`);
-  console.log(`EMAIL_USER       : ${process.env.EMAIL_USER ? process.env.EMAIL_USER : '[NOT SET]'}`);
-  console.log(`EMAIL_PASSWORD   : ${process.env.EMAIL_PASSWORD ? '********' : '[NOT SET]'}`);
   console.log(`EMAIL_HOST       : ${process.env.EMAIL_HOST || 'smtp.gmail.com'}`);
+  console.log(`EMAIL_PORT       : ${process.env.EMAIL_PORT || '587'}`);
+  console.log(`EMAIL_USER       : ${process.env.EMAIL_USER || '[NOT SET]'}`);
+  console.log(`EMAIL_PASSWORD   : ${process.env.EMAIL_PASSWORD ? '********' : '[NOT SET]'}`);
   console.log('----------------------------------------------\n');
 
   if (!targetEmail) {
@@ -21,16 +20,16 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Dispatching diagnostic test email to ${targetEmail}...`);
+  console.log(`Sending SMTP test email to ${targetEmail}...`);
   const result = await sendTestEmailDiagnostic(targetEmail);
 
-  console.log('\n--- Diagnostic Result ---');
+  console.log('\n--- SMTP Result ---');
   console.log(JSON.stringify(result, null, 2));
 
   if (result.success) {
-    console.log('\n✅ TEST PASSED: Email successfully delivered!');
+    console.log('\n✅ TEST PASSED: SMTP email dispatched successfully!');
   } else {
-    console.log('\n❌ TEST FAILED: Email could not be sent.');
+    console.log('\n❌ TEST FAILED: SMTP could not dispatch email.');
     if (result.hint) {
       console.log(`💡 Hint: ${result.hint}`);
     }

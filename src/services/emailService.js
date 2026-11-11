@@ -1,17 +1,22 @@
 import nodemailer from 'nodemailer';
 
 /**
- * Configure Nodemailer transport
+ * Configure Nodemailer SMTP transport
  */
 const createTransporter = () => {
-  const user = process.env.EMAIL_USER;
-  const pass = process.env.EMAIL_PASSWORD;
+  const user = process.env.EMAIL_USER?.trim();
+  const rawPass = process.env.EMAIL_PASSWORD?.trim();
 
-  if (!user || !pass) {
+  if (!user || !rawPass) {
     return null;
   }
 
-  const isGmail = !process.env.EMAIL_HOST || process.env.EMAIL_HOST.includes('gmail');
+  // Google App Passwords often contain spaces when copied (e.g., "mmzm fzfu ywyo yuax")
+  const pass = rawPass.replace(/\s+/g, '');
+
+  const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
+  const port = parseInt(process.env.EMAIL_PORT, 10) || 587;
+  const isGmail = host.includes('gmail');
 
   if (isGmail) {
     return nodemailer.createTransport({
@@ -20,14 +25,11 @@ const createTransporter = () => {
         user,
         pass,
       },
-      connectionTimeout: 8000,
-      greetingTimeout: 8000,
-      socketTimeout: 10000,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
     });
   }
-
-  const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
-  const port = parseInt(process.env.EMAIL_PORT, 10) || 587;
 
   return nodemailer.createTransport({
     host,
@@ -37,124 +39,17 @@ const createTransporter = () => {
       user,
       pass,
     },
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 10000,
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+    tls: {
+      rejectUnauthorized: false,
+    },
   });
 };
 
 const BRAND_NAME = 'Velmora';
 const STORE_URL = process.env.FRONTEND_URL || 'https://velmoraindia.store';
-
-/**
- * Dispatch email through Brevo API (HTTPS port 443), Resend API (HTTPS port 443), or Nodemailer SMTP fallback.
- * NOTE: Render's Free Tier blocks outbound SMTP ports 25, 465, and 587.
- * When running on Render Free Tier, setting BREVO_API_KEY sends via HTTPS port 443 which is never blocked.
- */
-export const dispatchEmail = async ({ fromName, to, subject, html, text }) => {
-  const brandName = fromName || BRAND_NAME;
-  const senderEmail = process.env.EMAIL_USER || process.env.BREVO_SENDER_EMAIL || 'velmora.shop.india.2026@gmail.com';
-
-  // 1. Try Brevo HTTP REST API (Port 443 - works on Render Free Tier without domain DNS setup)
-  if (process.env.BREVO_API_KEY) {
-    try {
-      const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-        method: 'POST',
-        headers: {
-          accept: 'application/json',
-          'api-key': process.env.BREVO_API_KEY,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          sender: {
-            name: brandName,
-            email: senderEmail,
-          },
-          to: [{ email: to }],
-          subject,
-          htmlContent: html,
-          ...(text ? { textContent: text } : {}),
-        }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const errMsg = data.message || `Brevo API HTTP ${res.status}`;
-        throw new Error(`[Brevo API Error] ${errMsg}`);
-      }
-
-      console.log(`[Email Service - Brevo] ✅ Dispatched email to ${to} (MessageId: ${data.messageId || 'ok'})`);
-      return { success: true, provider: 'brevo', messageId: data.messageId };
-    } catch (err) {
-      console.error(`[Email Service - Brevo Error] Failed to send email to ${to}:`, err.message);
-      throw err;
-    }
-  }
-
-  // 2. Try Resend HTTP REST API (Port 443 - works on Render Free Tier)
-  if (process.env.RESEND_API_KEY) {
-    try {
-      const fromField = process.env.RESEND_FROM || `${brandName} <onboarding@resend.dev>`;
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: fromField,
-          to: [to],
-          subject,
-          html,
-          ...(text ? { text } : {}),
-        }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const errMsg = data.message || `Resend API HTTP ${res.status}`;
-        throw new Error(`[Resend API Error] ${errMsg}`);
-      }
-
-      console.log(`[Email Service - Resend] ✅ Dispatched email to ${to} (Id: ${data.id || 'ok'})`);
-      return { success: true, provider: 'resend', messageId: data.id };
-    } catch (err) {
-      console.error(`[Email Service - Resend Error] Failed to send email to ${to}:`, err.message);
-      throw err;
-    }
-  }
-
-  // 3. Fallback: Nodemailer SMTP
-  const transporter = createTransporter();
-  if (!transporter) {
-    console.log(`[Email Service Simulation] Simulated dispatch to ${to}: "${subject}". Set BREVO_API_KEY or EMAIL_USER/EMAIL_PASSWORD to send live.`);
-    return { success: true, simulated: true };
-  }
-
-  try {
-    const info = await transporter.sendMail({
-      from: `"${brandName}" <${process.env.EMAIL_USER}>`,
-      to,
-      subject,
-      html,
-      ...(text ? { text } : {}),
-    });
-
-    console.log(`[Email Service - SMTP] ✅ Dispatched email to ${to} (MessageId: ${info.messageId})`);
-    return { success: true, provider: 'smtp', messageId: info.messageId };
-  } catch (error) {
-    if (error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
-      console.error(
-        `[Email Service - SMTP Error] Connection timed out sending to ${to}. ` +
-        `Render Free Tier blocks outbound SMTP ports 25, 465, and 587. ` +
-        `To fix: Add BREVO_API_KEY to Render environment variables to send over HTTPS port 443.`
-      );
-    } else {
-      console.error(`[Email Service - SMTP Error] Failed to send email to ${to}:`, error.message);
-    }
-    throw error;
-  }
-};
 
 /**
  * Shared Luxury Email Layout Wrapper
@@ -290,6 +185,44 @@ const wrapInEmailLayout = ({ previewText, contentHtml }) => `
 </body>
 </html>
 `;
+
+/**
+ * Dispatch email through Nodemailer SMTP
+ */
+export const dispatchEmail = async ({ fromName, to, subject, html, text }) => {
+  const brandName = fromName || BRAND_NAME;
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    console.log(`[Email Service Simulation] EMAIL_USER or EMAIL_PASSWORD missing. Simulated dispatch to ${to}: "${subject}"`);
+    return { success: true, simulated: true };
+  }
+
+  try {
+    const sender = `"${brandName}" <${process.env.EMAIL_USER}>`;
+    const info = await transporter.sendMail({
+      from: sender,
+      to,
+      subject,
+      html,
+      ...(text ? { text } : {}),
+    });
+
+    console.log(`[Email Service - SMTP] ✅ Dispatched email to ${to} (MessageId: ${info.messageId})`);
+    return { success: true, provider: 'smtp', messageId: info.messageId };
+  } catch (error) {
+    if (error.code === 'ETIMEDOUT' || error.message?.includes('timeout')) {
+      console.error(
+        `[Email Service - SMTP Timeout] Connection timed out sending to ${to}.\n` +
+        `Note: Render's Free tier blocks outbound SMTP traffic on ports 25, 465, and 587.\n` +
+        `To send via SMTP on Render, the service must be on an upgraded/paid plan (Starter) where SMTP ports are unblocked.`
+      );
+    } else {
+      console.error(`[Email Service - SMTP Error] Failed to send email to ${to}:`, error.message);
+    }
+    throw error;
+  }
+};
 
 /**
  * 0. Send 6-digit OTP Verification Email for Account Creation
@@ -573,7 +506,7 @@ export const sendOrderConfirmationEmail = async ({
 };
 
 /**
- * 4. Diagnostic test email for verifying live delivery from Render
+ * 4. Diagnostic test email for verifying live SMTP delivery from Render
  */
 export const sendTestEmailDiagnostic = async (to) => {
   const recipient = to || process.env.EMAIL_USER;
@@ -584,59 +517,64 @@ export const sendTestEmailDiagnostic = async (to) => {
     };
   }
 
-  const subject = `Velmora Email Test — ${new Date().toLocaleTimeString('en-IN')}`;
-  const providerName = process.env.BREVO_API_KEY
-    ? 'Brevo REST API (HTTPS Port 443)'
-    : process.env.RESEND_API_KEY
-    ? 'Resend REST API (HTTPS Port 443)'
-    : `SMTP (${process.env.EMAIL_HOST || 'smtp.gmail.com'})`;
+  const host = process.env.EMAIL_HOST || 'smtp.gmail.com';
+  const port = process.env.EMAIL_PORT || '587';
+  const subject = `Velmora SMTP Test — ${new Date().toLocaleTimeString('en-IN')}`;
 
   const contentHtml = `
-    <h2 style="color: #2B0F3A; font-size: 20px; margin-top: 0;">Diagnostic Email Delivery Test</h2>
+    <h2 style="color: #2B0F3A; font-size: 20px; margin-top: 0;">SMTP Delivery Diagnostic</h2>
     <div class="gold-divider"></div>
-    <p>This is a live test email sent from your <strong>Velmora Backend</strong>.</p>
+    <p>This is a live test email sent via <strong>Nodemailer SMTP</strong> from your Velmora Backend.</p>
     <div class="info-card">
       <strong>Server Time:</strong> ${new Date().toISOString()}<br />
-      <strong>Recipient:</strong> ${recipient}<br />
-      <strong>Active Provider:</strong> ${providerName}
+      <strong>SMTP Host:</strong> ${host}<br />
+      <strong>SMTP Port:</strong> ${port}<br />
+      <strong>Sender (EMAIL_USER):</strong> ${process.env.EMAIL_USER}<br />
+      <strong>Recipient:</strong> ${recipient}
     </div>
     <p style="color: #108A4E; font-weight: 600;">
-      ✅ Success! If you received this email, your Velmora account registration & OTP emails will deliver successfully!
+      ✅ Success! SMTP is working properly. Account creation and OTP verification emails will deliver successfully!
     </p>
   `;
 
   try {
     const result = await dispatchEmail({
-      fromName: `${BRAND_NAME} Diagnostic`,
+      fromName: `${BRAND_NAME} SMTP Test`,
       to: recipient,
       subject,
       html: wrapInEmailLayout({
-        previewText: 'Velmora live email delivery test',
+        previewText: 'Velmora SMTP live delivery test',
         contentHtml,
       }),
-      text: 'Velmora diagnostic test email: Delivery successful!',
+      text: `Velmora SMTP live test email to ${recipient}. If you received this, SMTP is working!`,
     });
 
     return {
       success: true,
-      ...result,
+      provider: 'smtp',
+      host,
+      port,
       recipient,
-      message: `Test email successfully dispatched to ${recipient} via ${providerName}`,
+      messageId: result.messageId,
+      message: `Test email successfully sent to ${recipient} via SMTP (${host}:${port})`,
     };
   } catch (error) {
     const isTimeout = error.code === 'ETIMEDOUT' || error.message?.includes('timeout');
     return {
       success: false,
+      provider: 'smtp',
+      host,
+      port,
       error: error.message,
-      provider: process.env.BREVO_API_KEY ? 'brevo' : process.env.RESEND_API_KEY ? 'resend' : 'smtp',
       hint: isTimeout
-        ? 'Render Free Tier blocks outbound SMTP ports 25, 465, and 587. Configure BREVO_API_KEY in Render environment variables to send over HTTPS port 443 without firewall restrictions.'
+        ? 'Connection timed out. Render Free Tier blocks outbound SMTP traffic on ports 25, 465, and 587. To use simple SMTP on Render, the Web Service must be upgraded to a paid plan (Starter $7/mo) where Render opens outbound SMTP ports.'
         : undefined,
     };
   }
 };
 
 export default {
+  createTransporter,
   dispatchEmail,
   sendOtpEmail,
   sendWelcomeEmail,
