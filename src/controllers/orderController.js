@@ -1,6 +1,6 @@
 import User from '../models/userModel.js';
 import { fetchCustomerOrders } from '../services/shopifyService.js';
-import { sendOrderConfirmationEmail } from '../services/emailService.js';
+import { sendOrderConfirmationEmail, sendOrderCancellationEmail } from '../services/emailService.js';
 
 /**
  * @desc    Get authenticated customer's Shopify orders
@@ -99,7 +99,60 @@ export const confirmOrderEmail = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Request cancellation of an order
+ * @route   POST /api/orders/cancel
+ * @access  Public / Optional Auth
+ */
+export const cancelOrderRequest = async (req, res, next) => {
+  try {
+    const { orderId, orderName, reason, notes, customerEmail, customerName, fulfillmentStatus } = req.body;
+    const effectiveEmail = req.user?.email || customerEmail;
+    const effectiveName = req.user?.fullName || customerName || 'Valued Patron';
+
+    if (!orderName && !orderId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order reference number is required to process cancellation.',
+      });
+    }
+
+    if (!effectiveEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer email is required.',
+      });
+    }
+
+    // Strict Condition: Shipped orders cannot be cancelled
+    const shippedStatuses = ['SHIPPED', 'FULFILLED', 'IN_TRANSIT', 'ON_THE_WAY', 'OUT_FOR_DELIVERY', 'DELIVERED'];
+    if (fulfillmentStatus && shippedStatuses.includes(fulfillmentStatus.toUpperCase())) {
+      return res.status(400).json({
+        success: false,
+        message: 'This order has already been shipped and dispatched, so it cannot be cancelled. You can initiate a return or exchange once the package arrives.',
+      });
+    }
+
+    // Dispatch cancellation email notifications to admin and customer
+    await sendOrderCancellationEmail({
+      customerEmail: effectiveEmail,
+      customerName: effectiveName,
+      orderName: orderName || orderId,
+      reason: reason || 'Customer requested cancellation',
+      notes: notes || '',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Cancellation request for order ${orderName || orderId} has been successfully submitted. You will receive an email confirmation shortly.`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export default {
   getCustomerOrders,
   confirmOrderEmail,
+  cancelOrderRequest,
 };

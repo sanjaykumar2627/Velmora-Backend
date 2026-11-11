@@ -611,6 +611,81 @@ export const sendTestEmailDiagnostic = async (to) => {
   }
 };
 
+/**
+ * Dispatch order cancellation request notification to Admin and confirmation to Customer
+ */
+export const sendOrderCancellationEmail = async ({
+  customerEmail,
+  customerName = 'Valued Patron',
+  orderName,
+  reason = 'Customer requested cancellation',
+  notes = '',
+}) => {
+  const adminEmail = process.env.EMAIL_USER || 'velmora.shop.india.2026@gmail.com';
+
+  const adminSubject = `[Order Cancellation Alert] ${orderName} - ${customerEmail}`;
+  const adminHtml = wrapInEmailLayout({
+    previewText: `Cancellation requested for ${orderName}`,
+    contentHtml: `
+      <h2 style="color: #991B1B; font-family: 'Playfair Display', Georgia, serif; font-size: 20px; margin: 0 0 12px;">
+        Order Cancellation Request Received
+      </h2>
+      <p style="color: #4E3E4F; font-size: 14px; line-height: 1.6;">
+        A customer has requested cancellation for their order. Please review and update fulfillment in Shopify Admin.
+      </p>
+      <div style="border-left: 4px solid #991B1B; background: #FEF2F2; padding: 16px; margin: 20px 0; border-radius: 4px;">
+        <p style="margin: 0 0 8px; font-size: 14px;"><strong>Order ID:</strong> ${orderName}</p>
+        <p style="margin: 0 0 8px; font-size: 14px;"><strong>Customer:</strong> ${customerName} (${customerEmail})</p>
+        <p style="margin: 0 0 8px; font-size: 14px;"><strong>Reason:</strong> ${reason}</p>
+        ${notes ? `<p style="margin: 0; font-size: 14px;"><strong>Additional Notes:</strong> ${notes}</p>` : ''}
+      </div>
+      <p style="font-size: 13px; color: #6A5B6C;">
+        To manage this order, visit your <a href="https://admin.shopify.com" style="color: #6B1D4F; font-weight: 600;">Shopify Orders Dashboard</a>.
+      </p>
+    `,
+  });
+
+  const customerSubject = `Your Cancellation Request for Order ${orderName} — Velmora`;
+  const customerHtml = wrapInEmailLayout({
+    previewText: `We have received your cancellation request for order ${orderName}`,
+    contentHtml: `
+      <h2 style="color: #2B0F3A; font-family: 'Playfair Display', Georgia, serif; font-size: 20px; margin: 0 0 12px;">
+        Cancellation Request Acknowledged
+      </h2>
+      <p style="color: #4E3E4F; font-size: 14px; line-height: 1.6;">
+        Dear ${customerName},
+      </p>
+      <p style="color: #4E3E4F; font-size: 14px; line-height: 1.6;">
+        We have received your request to cancel order <strong>${orderName}</strong>. If your order has not been dispatched yet, our team will cancel it immediately and no charges will apply.
+      </p>
+      <div style="margin: 20px 0; padding: 16px; background: #FCF9FB; border: 1px solid #EBE4DA; border-radius: 4px;">
+        <p style="margin: 0 0 6px; font-size: 13px;"><strong>Order Reference:</strong> ${orderName}</p>
+        <p style="margin: 0; font-size: 13px;"><strong>Reason Given:</strong> ${reason}</p>
+      </div>
+      <p style="color: #6A5B6C; font-size: 13px; line-height: 1.6;">
+        If you have any questions or wish to re-order, reply directly to this email or contact us at <a href="mailto:${adminEmail}" style="color: #6B1D4F;">${adminEmail}</a>.
+      </p>
+    `,
+  });
+
+  await Promise.allSettled([
+    dispatchEmail({
+      to: adminEmail,
+      subject: adminSubject,
+      html: adminHtml,
+      text: `Cancellation requested for ${orderName} by ${customerEmail}. Reason: ${reason}`,
+    }),
+    dispatchEmail({
+      to: customerEmail,
+      subject: customerSubject,
+      html: customerHtml,
+      text: `Cancellation request acknowledged for order ${orderName}.`,
+    }),
+  ]);
+
+  return { success: true };
+};
+
 export default {
   createTransporter,
   dispatchEmail,
@@ -618,5 +693,6 @@ export default {
   sendWelcomeEmail,
   sendPasswordResetEmail,
   sendOrderConfirmationEmail,
+  sendOrderCancellationEmail,
   sendTestEmailDiagnostic,
 };
