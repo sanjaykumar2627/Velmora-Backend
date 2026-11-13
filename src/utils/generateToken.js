@@ -46,11 +46,19 @@ export const generateTokenAndSetCookie = (res, userId, role = 'customer') => {
  */
 export const clearAuthCookie = (res) => {
   const isProduction = process.env.NODE_ENV === 'production';
-  res.clearCookie(COOKIE_NAME, {
+  const cookieOptions = {
     httpOnly: true,
     secure: isProduction,
     sameSite: isProduction ? 'none' : 'lax',
     path: '/',
+  };
+
+  res.clearCookie(COOKIE_NAME, cookieOptions);
+  // Explicit expire fallback for cross-browser reliability (Safari / Chrome / Mobile)
+  res.cookie(COOKIE_NAME, '', {
+    ...cookieOptions,
+    expires: new Date(0),
+    maxAge: 0,
   });
 };
 
