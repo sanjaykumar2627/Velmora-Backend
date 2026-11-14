@@ -120,6 +120,53 @@ export const confirmOrderEmail = async (req, res, next) => {
 };
 
 /**
+ * @desc    Shopify Webhook for Orders Create (orders/create)
+ * @route   POST /api/orders/webhook
+ * @access  Public (called automatically by Shopify Webhook)
+ */
+export const handleShopifyOrderWebhook = async (req, res) => {
+  try {
+    const order = req.body;
+    if (!order || !order.id) {
+      return res.status(200).json({ received: true });
+    }
+
+    const email = order.email || order.contact_email || order.customer?.email;
+    const fullName =
+      [order.customer?.first_name, order.customer?.last_name].filter(Boolean).join(' ') ||
+      order.shipping_address?.name ||
+      'Valued Customer';
+    const orderNumber = order.name || `#${order.order_number}`;
+
+    const items = (order.line_items || []).map((item) => ({
+      title: item.title,
+      quantity: item.quantity,
+      price: item.price,
+    }));
+
+    if (email) {
+      sendOrderConfirmationEmail({
+        to: email,
+        fullName,
+        orderNumber,
+        items,
+        shippingAddress: order.shipping_address || {},
+        subtotal: order.subtotal_price || 0,
+        shippingCost: order.total_shipping_price_set?.shop_money?.amount || 0,
+        grandTotal: order.total_price || 0,
+      }).catch((err) =>
+        console.error(`[Shopify Webhook Order Email Error] to ${email}:`, err.message)
+      );
+    }
+
+    return res.status(200).json({ success: true, orderNumber });
+  } catch (error) {
+    console.error('[Shopify Webhook Error]', error.message);
+    return res.status(200).json({ received: true, error: error.message });
+  }
+};
+
+/**
  * @desc    Request cancellation of an order
  * @route   POST /api/orders/cancel
  * @access  Public / Optional Auth
@@ -192,5 +239,6 @@ export const cancelOrderRequest = async (req, res, next) => {
 export default {
   getCustomerOrders,
   confirmOrderEmail,
+  handleShopifyOrderWebhook,
   cancelOrderRequest,
 };
