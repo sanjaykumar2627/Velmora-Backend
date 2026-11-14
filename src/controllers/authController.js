@@ -35,24 +35,29 @@ export const registerUser = async (req, res, next) => {
 
     // 2. Check if user already exists
     let user = await User.findOne({ email: normalizedEmail });
-    if (user) {
+    if (user && user.isVerified) {
       return res.status(400).json({
         success: false,
         message: 'An account with this email address already exists. Please log in.',
       });
     }
 
-    user = new User({
-      fullName: fullName.trim(),
-      email: normalizedEmail,
-      password,
-      phoneNumber: effectivePhone.trim(),
-      isVerified: true,
-    });
+    if (user && !user.isVerified) {
+      // Re-register unverified user
+      user.fullName = fullName.trim();
+      user.password = password; // Hashed by pre('save') hook
+      user.phoneNumber = effectivePhone.trim();
+    } else {
+      user = new User({
+        fullName: fullName.trim(),
+        email: normalizedEmail,
+        password,
+        phoneNumber: effectivePhone.trim(),
+        isVerified: false,
+      });
+    }
 
-    await user.save();
-
-    // Auto-create & link customer in Shopify Storefront
+    // Auto-create & link customer in Shopify Storefront (non-blocking)
     try {
       const nameParts = fullName.trim().split(' ');
       const firstName = nameParts[0] || '';
@@ -70,29 +75,28 @@ export const registerUser = async (req, res, next) => {
       if (authRes?.customerAccessToken?.accessToken) {
         user.shopifyCustomerAccessToken = authRes.customerAccessToken.accessToken;
       }
-      if (user.shopifyCustomerId || user.shopifyCustomerAccessToken) {
-        await user.save({ validateBeforeSave: false });
-      }
     } catch (shopifySyncErr) {
       console.warn('[Shopify Customer Sync Warning]', shopifySyncErr.message);
     }
 
-    // Dispatch welcome email asynchronously in background
-    sendWelcomeEmail({
+    // 3. Generate 6-digit verification OTP
+    const otp = user.generateOTP();
+    await user.save();
+
+    // 4. Dispatch OTP email asynchronously in background
+    sendOtpEmail({
       to: user.email,
       fullName: user.fullName,
+      otp,
     }).catch((err) => {
-      console.warn('[Email Service Notice] Welcome email failed:', err.message);
+      console.error(`[Email Service Error] Failed to send OTP to ${user.email}:`, err.message);
     });
 
-    // Generate JWT & set HTTP-only cookie for instant login
-    const token = generateTokenAndSetCookie(res, user._id, user.role);
-
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
-      message: 'Account created successfully! Welcome to Velmora.',
-      user: user.toJSON(),
-      token,
+      requiresVerification: true,
+      email: user.email,
+      message: 'A 6-digit verification code has been dispatched to your email. Please verify to complete your account setup.',
     });
   } catch (error) {
     next(error);
@@ -271,10 +275,20 @@ export const loginUser = async (req, res, next) => {
       });
     }
 
-    // Auto-verify user on successful password match if needed
+    // Check if account has completed email OTP verification
     if (!user.isVerified) {
-      user.isVerified = true;
-      await user.save({ validateBeforeSave: false });
+      const otp = user.generateOTP();
+      await user.save();
+      sendOtpEmail({ to: user.email, fullName: user.fullName, otp }).catch((err) =>
+        console.warn('[OTP Notice on Login]', err.message)
+      );
+
+      return res.status(403).json({
+        success: false,
+        requiresVerification: true,
+        email: user.email,
+        message: 'Your email address is not verified yet. We have sent a 6-digit verification code to your email.',
+      });
     }
 
     // 4. Check/Refresh Shopify Customer Token in background if supported
