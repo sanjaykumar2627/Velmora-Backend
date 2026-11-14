@@ -17,6 +17,17 @@ export const getCustomerOrders = async (req, res, next) => {
     }
 
     const customerToken = user.shopifyCustomerAccessToken || req.headers['x-shopify-customer-token'];
+    const cancelledList = user.cancelledOrders || [];
+
+    const isOrderCancelledInDB = (order) => {
+      const oId = String(order.id || '');
+      const oName = String(order.name || order.orderNumber || '');
+      return cancelledList.some(
+        (c) =>
+          (c.orderId && (oId.includes(c.orderId) || c.orderId.includes(oId))) ||
+          (c.orderName && (oName === c.orderName || oName.includes(c.orderName)))
+      );
+    };
 
     // 2. If token is present, fetch real Shopify orders
     if (customerToken) {
@@ -24,12 +35,21 @@ export const getCustomerOrders = async (req, res, next) => {
         const customerData = await fetchCustomerOrders(customerToken);
         if (customerData && customerData.orders) {
           const rawOrders = customerData.orders.edges?.map((edge) => edge.node) || [];
-          
+          const enhancedOrders = rawOrders.map((order) => {
+            if (isOrderCancelledInDB(order)) {
+              return {
+                ...order,
+                cancellationRequested: true,
+              };
+            }
+            return order;
+          });
+
           return res.status(200).json({
             success: true,
             shopifySynced: true,
-            count: rawOrders.length,
-            orders: rawOrders,
+            count: enhancedOrders.length,
+            orders: enhancedOrders,
             message: 'Real Shopify order commissions retrieved successfully.',
           });
         }
@@ -131,6 +151,24 @@ export const cancelOrderRequest = async (req, res, next) => {
         success: false,
         message: 'This order has already been shipped and dispatched, so it cannot be cancelled. You can initiate a return or exchange once the package arrives.',
       });
+    }
+
+    // Record cancellation in user document in database
+    if (effectiveEmail) {
+      await User.findOneAndUpdate(
+        { email: effectiveEmail.toLowerCase().trim() },
+        {
+          $addToSet: {
+            cancelledOrders: {
+              orderId: String(orderId || ''),
+              orderName: String(orderName || ''),
+              reason: String(reason || 'Customer requested cancellation'),
+              notes: String(notes || ''),
+              requestedAt: new Date(),
+            },
+          },
+        }
+      ).catch((err) => console.warn('[Cancel Order Save Warning]', err.message));
     }
 
     // Dispatch cancellation email notifications to admin and customer

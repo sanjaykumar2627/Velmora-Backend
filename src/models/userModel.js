@@ -67,6 +67,15 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    cancelledOrders: [
+      {
+        orderId: { type: String, trim: true },
+        orderName: { type: String, trim: true },
+        reason: { type: String, trim: true },
+        notes: { type: String, trim: true },
+        requestedAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   {
     timestamps: true,
