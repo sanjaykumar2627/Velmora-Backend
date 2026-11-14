@@ -46,7 +46,14 @@ export const updateUserProfile = async (req, res, next) => {
     }
 
     if (phoneNumber !== undefined || phone !== undefined) {
-      user.phoneNumber = (phoneNumber || phone || '').trim();
+      const p = (phoneNumber || phone || '').trim();
+      if (p.length > 0 && !/^\d{10}$/.test(p)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Phone number must be exactly 10 digits with numbers only (no letters or special characters).',
+        });
+      }
+      user.phoneNumber = p;
     }
 
     // Optional password update

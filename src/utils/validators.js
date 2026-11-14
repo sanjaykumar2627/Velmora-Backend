@@ -21,9 +21,9 @@ export const validateRegistration = ({ fullName, email, password, phoneNumber })
   }
 
   if (phoneNumber && typeof phoneNumber === 'string' && phoneNumber.trim().length > 0) {
-    const cleanPhone = phoneNumber.replace(/[\s\-\+\(\)]/g, '');
-    if (!/^\d{7,15}$/.test(cleanPhone)) {
-      errors.push('Please enter a valid phone number (7 to 15 digits).');
+    const rawPhone = phoneNumber.trim();
+    if (!/^\d{10}$/.test(rawPhone)) {
+      errors.push('Phone number must be exactly 10 digits with numbers only (no letters or special characters).');
     }
   }
 
@@ -65,6 +65,8 @@ export const validateAddress = ({ fullName, phoneNumber, addressLine1, city, sta
 
   if (!phoneNumber || phoneNumber.trim().length === 0) {
     errors.push('Delivery phone number is required.');
+  } else if (!/^\d{10}$/.test(phoneNumber.trim())) {
+    errors.push('Delivery phone number must be exactly 10 digits (numbers only).');
   }
 
   if (!addressLine1 || addressLine1.trim().length === 0) {

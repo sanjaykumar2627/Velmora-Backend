@@ -686,11 +686,57 @@ export const sendOrderCancellationEmail = async ({
   return { success: true };
 };
 
+/**
+ * Dispatch alert email to Store Admin when a new customer registers
+ */
+export const sendNewUserAdminAlert = async ({ fullName, email, phoneNumber, phone }) => {
+  const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER || 'velmora.shop.india.2026@gmail.com';
+  const effectivePhone = phoneNumber || phone || 'Not provided';
+  const customerName = fullName ? fullName.trim() : 'New Patron';
+
+  const adminSubject = `[New Customer Alert] 🎉 ${customerName} registered on Velmora`;
+  const adminHtml = wrapInEmailLayout({
+    previewText: `New user registration: ${customerName} (${email})`,
+    contentHtml: `
+      <h2 style="color: #2B0F3A; font-family: 'Playfair Display', Georgia, serif; font-size: 20px; margin: 0 0 12px;">
+        🎉 New Customer Registration Alert
+      </h2>
+      <p style="color: #4E3E4F; font-size: 14px; line-height: 1.6;">
+        A new customer has registered on <strong>${BRAND_NAME}</strong>.
+      </p>
+      <div style="border-left: 4px solid #C8A45D; background: #FAF7F2; padding: 16px; margin: 20px 0; border-radius: 4px;">
+        <p style="margin: 0 0 8px; font-size: 14px;"><strong>Customer Name:</strong> ${customerName}</p>
+        <p style="margin: 0 0 8px; font-size: 14px;"><strong>Email Address:</strong> <a href="mailto:${email}" style="color: #6B1D4F;">${email}</a></p>
+        <p style="margin: 0 0 8px; font-size: 14px;"><strong>Mobile Number:</strong> ${effectivePhone}</p>
+        <p style="margin: 0; font-size: 13px; color: #766477;"><strong>Registration Time:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST</p>
+      </div>
+      <p style="font-size: 13px; color: #6A5B6C;">
+        You can review customer orders and profiles in your <a href="https://admin.shopify.com" style="color: #6B1D4F; font-weight: 600;">Shopify Admin Dashboard</a>.
+      </p>
+    `,
+  });
+
+  try {
+    await dispatchEmail({
+      fromName: 'Velmora Concierge Alert',
+      to: adminEmail,
+      subject: adminSubject,
+      html: adminHtml,
+      text: `New customer registered on Velmora: ${customerName} (${email}, Phone: ${effectivePhone})`,
+    });
+    return true;
+  } catch (err) {
+    console.warn('[Admin New User Alert Notice] Failed to notify admin:', err.message);
+    return false;
+  }
+};
+
 export default {
   createTransporter,
   dispatchEmail,
   sendOtpEmail,
   sendWelcomeEmail,
+  sendNewUserAdminAlert,
   sendPasswordResetEmail,
   sendOrderConfirmationEmail,
   sendOrderCancellationEmail,
