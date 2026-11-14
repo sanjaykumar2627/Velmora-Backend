@@ -1,6 +1,11 @@
 import User from '../models/userModel.js';
 import { fetchCustomerOrders } from '../services/shopifyService.js';
 import { sendOrderConfirmationEmail, sendOrderCancellationEmail } from '../services/emailService.js';
+import {
+  tagOrderAsCancellationRequested,
+  getOrderTrackingDetails,
+  getShopifyAdminAccessToken,
+} from '../services/shopifyAdminService.js';
 
 /**
  * @desc    Get authenticated customer's Shopify orders
@@ -29,7 +34,7 @@ export const getCustomerOrders = async (req, res, next) => {
       );
     };
 
-    // 2. If token is present, fetch real Shopify orders
+    // 2. If token is present, fetch real Shopify orders via Storefront API
     if (customerToken) {
       try {
         const customerData = await fetchCustomerOrders(customerToken);
@@ -58,22 +63,86 @@ export const getCustomerOrders = async (req, res, next) => {
       }
     }
 
-    // 3. If Shopify customer authentication is not configured / not linked:
-    // Follow strict requirement: Do not return fake data or store mock orders in MongoDB.
+    // 3. Fallback: Query Shopify Admin API directly by user.email
+    try {
+      const shop = process.env.SHOPIFY_STORE_DOMAIN || 'etujp6-nv.myshopify.com';
+      const apiVersion = process.env.SHOPIFY_API_VERSION || '2024-01';
+      const adminToken = await getShopifyAdminAccessToken();
+
+      const adminRes = await fetch(
+        `https://${shop}/admin/api/${apiVersion}/orders.json?email=${encodeURIComponent(user.email.trim())}&status=any`,
+        {
+          headers: {
+            'X-Shopify-Access-Token': adminToken,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (adminRes.ok) {
+        const adminData = await adminRes.json();
+        const rawOrders = adminData.orders || [];
+
+        const mappedOrders = rawOrders.map((o) => {
+          const isCancelled =
+            isOrderCancelledInDB(o) ||
+            Boolean(o.cancelled_at || o.cancel_reason || o.tags?.includes('ORDER_CANCELLED'));
+          const isCancelPending = o.tags?.includes('CANCEL_REQUESTED');
+
+          return {
+            id: o.id,
+            name: o.name,
+            orderNumber: o.order_number,
+            processedAt: o.processed_at || o.created_at,
+            createdAt: o.created_at,
+            totalPrice: { amount: o.total_price },
+            fulfillmentStatus: o.fulfillment_status,
+            financialStatus: o.financial_status,
+            cancelledAt: o.cancelled_at,
+            cancelReason: o.cancel_reason,
+            cancellationRequested: isCancelPending,
+            isCancelled: isCancelled,
+            tags: o.tags,
+            fulfillments: (o.fulfillments || []).map((f) => ({
+              trackingCompany: f.tracking_company,
+              trackingNumber: f.tracking_number,
+              trackingUrl: f.tracking_url,
+              status: f.shipment_status || f.status,
+              updatedAt: f.updated_at,
+            })),
+            lineItems: {
+              edges: (o.line_items || []).map((item) => ({
+                node: {
+                  title: item.title,
+                  quantity: item.quantity,
+                  originalTotalPrice: { amount: item.price * item.quantity },
+                  variantTitle: item.variant_title,
+                },
+              })),
+            },
+            shippingAddress: o.shipping_address,
+          };
+        });
+
+        return res.status(200).json({
+          success: true,
+          shopifySynced: true,
+          count: mappedOrders.length,
+          orders: mappedOrders,
+          message: 'Shopify orders retrieved successfully.',
+        });
+      }
+    } catch (adminErr) {
+      console.warn('[Shopify Admin Orders Fallback Notice]', adminErr.message);
+    }
+
+    // 4. Default empty state
     return res.status(200).json({
       success: true,
       shopifySynced: false,
       count: 0,
       orders: [],
       message: 'No synced Shopify orders found for this account email.',
-      setupInfo: {
-        reason: 'Shopify Storefront customer order access requires active customer authentication linking.',
-        instructions: [
-          '1. Enable "Customer Accounts" in Shopify Admin -> Settings -> Customer Accounts.',
-          '2. Ensure the customer places checkout orders using the email: ' + user.email,
-          '3. Once an order is completed on Shopify, you can link the customer account token or configure Shopify Headless Customer Accounts API.',
-        ],
-      },
     });
   } catch (error) {
     next(error);
@@ -227,6 +296,14 @@ export const cancelOrderRequest = async (req, res, next) => {
       notes: notes || '',
     });
 
+    // Automatically tag order in Shopify Admin UI as CANCEL_REQUESTED and record reason in Notes
+    tagOrderAsCancellationRequested({
+      orderId,
+      orderName,
+      reason,
+      notes,
+    }).catch((err) => console.warn('[Shopify Auto-Tag Warning]', err.message));
+
     return res.status(200).json({
       success: true,
       message: `Cancellation request for order ${orderName || orderId} has been successfully submitted. You will receive an email confirmation shortly.`,
@@ -236,9 +313,41 @@ export const cancelOrderRequest = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Public Order Tracking by Order Number & Email/Phone
+ * @route   POST /api/orders/track
+ * @access  Public
+ */
+export const trackOrderPublic = async (req, res, next) => {
+  try {
+    const { orderNumber, emailOrPhone } = req.body;
+
+    if (!orderNumber || !emailOrPhone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide both your Order Number (e.g. #1004) and your registered Email or Mobile Number.',
+      });
+    }
+
+    const trackingData = await getOrderTrackingDetails({ orderNumber, emailOrPhone });
+
+    return res.status(200).json({
+      success: true,
+      order: trackingData,
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Unable to retrieve tracking information for this order.',
+    });
+  }
+};
+
 export default {
   getCustomerOrders,
   confirmOrderEmail,
   handleShopifyOrderWebhook,
   cancelOrderRequest,
+  trackOrderPublic,
 };

@@ -4,10 +4,14 @@ import {
   confirmOrderEmail,
   cancelOrderRequest,
   handleShopifyOrderWebhook,
+  trackOrderPublic,
 } from '../controllers/orderController.js';
 import { protect, optionalAuth } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
+
+// Public order tracking route
+router.post('/track', trackOrderPublic);
 
 // Protected order history route
 router.get('/', protect, getCustomerOrders);
