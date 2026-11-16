@@ -151,6 +151,105 @@ export async function tagOrderAsCancellationRequested({ orderId, orderName, reas
 }
 
 /**
+ * Automatically tags an order in Shopify Admin as RETURN_REQUESTED (or EXCHANGE_REQUESTED) and updates order notes
+ */
+export async function tagOrderAsReturnRequested({ orderId, orderName, returnType, reason, notes }) {
+  try {
+    const shop = process.env.SHOPIFY_STORE_DOMAIN || 'etujp6-nv.myshopify.com';
+    const apiVersion = process.env.SHOPIFY_API_VERSION || '2024-01';
+    const accessToken = await getShopifyAdminAccessToken();
+
+    // 1. Determine numeric ID or lookup by order name
+    let numericId = null;
+    if (orderId) {
+      const match = String(orderId).match(/\d+/g);
+      if (match && match.length > 0) {
+        numericId = match.reduce((a, b) => (a.length >= b.length ? a : b));
+      }
+    }
+
+    let targetOrder = null;
+
+    if (numericId && numericId.length >= 8) {
+      const res = await fetch(`https://${shop}/admin/api/${apiVersion}/orders/${numericId}.json?fields=id,name,tags,note`, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (res.ok) {
+        const body = await res.json();
+        targetOrder = body.order;
+      }
+    }
+
+    if (!targetOrder && orderName) {
+      const cleanName = encodeURIComponent(orderName.trim());
+      const searchRes = await fetch(`https://${shop}/admin/api/${apiVersion}/orders.json?name=${cleanName}&status=any&fields=id,name,tags,note`, {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (searchRes.ok) {
+        const body = await searchRes.json();
+        if (body.orders && body.orders.length > 0) {
+          targetOrder = body.orders[0];
+        }
+      }
+    }
+
+    if (!targetOrder) {
+      console.warn(`[Shopify Admin] Could not locate order ${orderName || orderId} in Shopify Admin to tag for return.`);
+      return { success: false, message: 'Order not found in Shopify' };
+    }
+
+    // 2. Prepare updated tags
+    const existingTags = targetOrder.tags
+      ? targetOrder.tags.split(',').map((t) => t.trim()).filter(Boolean)
+      : [];
+
+    const tagName = returnType === 'EXCHANGE' ? 'EXCHANGE_REQUESTED' : 'RETURN_REQUESTED';
+    if (!existingTags.includes(tagName)) {
+      existingTags.push(tagName);
+    }
+
+    // 3. Prepare updated note
+    const returnNote = `[${returnType === 'EXCHANGE' ? 'Exchange' : 'Return'} Requested]: Reason: ${reason || 'Not specified'}${notes ? ` | Notes: ${notes}` : ''}`;
+    let updatedNote = targetOrder.note ? `${targetOrder.note}\n${returnNote}` : returnNote;
+
+    // 4. Update the order in Shopify Admin
+    const updateRes = await fetch(`https://${shop}/admin/api/${apiVersion}/orders/${targetOrder.id}.json`, {
+      method: 'PUT',
+      headers: {
+        'X-Shopify-Access-Token': accessToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        order: {
+          id: targetOrder.id,
+          tags: existingTags.join(', '),
+          note: updatedNote,
+        },
+      }),
+    });
+
+    if (!updateRes.ok) {
+      const errBody = await updateRes.text();
+      console.error(`[Shopify Admin Return Tag Error] (${updateRes.status}):`, errBody);
+      return { success: false, error: errBody };
+    }
+
+    const updatedData = await updateRes.json();
+    console.log(`[Shopify Admin] Order ${targetOrder.name || targetOrder.id} successfully tagged as ${tagName} in Shopify Admin UI!`);
+    return { success: true, order: updatedData.order };
+  } catch (err) {
+    console.error('[Shopify Admin Tagging Error for Return]:', err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Fetches and verifies order tracking details from Shopify Admin
  */
 export async function getOrderTrackingDetails({ orderNumber, emailOrPhone }) {

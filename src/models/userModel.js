@@ -76,6 +76,16 @@ const userSchema = new mongoose.Schema(
         requestedAt: { type: Date, default: Date.now },
       },
     ],
+    returnedOrders: [
+      {
+        orderId: { type: String, trim: true },
+        orderName: { type: String, trim: true },
+        type: { type: String, enum: ['RETURN', 'EXCHANGE'], default: 'RETURN' },
+        reason: { type: String, trim: true },
+        notes: { type: String, trim: true },
+        requestedAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   {
     timestamps: true,

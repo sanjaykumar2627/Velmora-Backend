@@ -3,6 +3,7 @@ import {
   getCustomerOrders,
   confirmOrderEmail,
   cancelOrderRequest,
+  returnOrderRequest,
   handleShopifyOrderWebhook,
   trackOrderPublic,
 } from '../controllers/orderController.js';
@@ -24,5 +25,8 @@ router.post('/webhook', handleShopifyOrderWebhook);
 
 // Order cancellation request route
 router.post('/cancel', optionalAuth, cancelOrderRequest);
+
+// Order return / exchange request route
+router.post('/return', optionalAuth, returnOrderRequest);
 
 export default router;

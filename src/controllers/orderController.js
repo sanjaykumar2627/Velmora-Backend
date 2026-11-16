@@ -1,8 +1,13 @@
 import User from '../models/userModel.js';
 import { fetchCustomerOrders } from '../services/shopifyService.js';
-import { sendOrderConfirmationEmail, sendOrderCancellationEmail } from '../services/emailService.js';
+import {
+  sendOrderConfirmationEmail,
+  sendOrderCancellationEmail,
+  sendOrderReturnEmail,
+} from '../services/emailService.js';
 import {
   tagOrderAsCancellationRequested,
+  tagOrderAsReturnRequested,
   getOrderTrackingDetails,
   getShopifyAdminAccessToken,
 } from '../services/shopifyAdminService.js';
@@ -23,11 +28,22 @@ export const getCustomerOrders = async (req, res, next) => {
 
     const customerToken = user.shopifyCustomerAccessToken || req.headers['x-shopify-customer-token'];
     const cancelledList = user.cancelledOrders || [];
+    const returnedList = user.returnedOrders || [];
 
     const isOrderCancelledInDB = (order) => {
       const oId = String(order.id || '');
       const oName = String(order.name || order.orderNumber || '');
       return cancelledList.some(
+        (c) =>
+          (c.orderId && (oId.includes(c.orderId) || c.orderId.includes(oId))) ||
+          (c.orderName && (oName === c.orderName || oName.includes(c.orderName)))
+      );
+    };
+
+    const isOrderReturnedInDB = (order) => {
+      const oId = String(order.id || '');
+      const oName = String(order.name || order.orderNumber || '');
+      return returnedList.some(
         (c) =>
           (c.orderId && (oId.includes(c.orderId) || c.orderId.includes(oId))) ||
           (c.orderName && (oName === c.orderName || oName.includes(c.orderName)))
@@ -41,13 +57,13 @@ export const getCustomerOrders = async (req, res, next) => {
         if (customerData && customerData.orders) {
           const rawOrders = customerData.orders.edges?.map((edge) => edge.node) || [];
           const enhancedOrders = rawOrders.map((order) => {
-            if (isOrderCancelledInDB(order)) {
-              return {
-                ...order,
-                cancellationRequested: true,
-              };
-            }
-            return order;
+            const isCancelled = isOrderCancelledInDB(order);
+            const isReturned = isOrderReturnedInDB(order);
+            return {
+              ...order,
+              ...(isCancelled ? { cancellationRequested: true } : {}),
+              ...(isReturned ? { returnRequested: true } : {}),
+            };
           });
 
           return res.status(200).json({
@@ -88,6 +104,12 @@ export const getCustomerOrders = async (req, res, next) => {
             isOrderCancelledInDB(o) ||
             Boolean(o.cancelled_at || o.cancel_reason || o.tags?.includes('ORDER_CANCELLED'));
           const isCancelPending = o.tags?.includes('CANCEL_REQUESTED');
+          const isReturnPending =
+            isOrderReturnedInDB(o) ||
+            Boolean(
+              o.tags?.includes('RETURN_REQUESTED') ||
+              o.tags?.includes('EXCHANGE_REQUESTED')
+            );
 
           return {
             id: o.id,
@@ -101,6 +123,7 @@ export const getCustomerOrders = async (req, res, next) => {
             cancelledAt: o.cancelled_at,
             cancelReason: o.cancel_reason,
             cancellationRequested: isCancelPending,
+            returnRequested: isReturnPending,
             isCancelled: isCancelled,
             tags: o.tags,
             fulfillments: (o.fulfillments || []).map((f) => ({
@@ -314,6 +337,79 @@ export const cancelOrderRequest = async (req, res, next) => {
 };
 
 /**
+ * @desc    Request return or exchange for an order
+ * @route   POST /api/orders/return
+ * @access  Public / Optional Auth
+ */
+export const returnOrderRequest = async (req, res, next) => {
+  try {
+    const { orderId, orderName, returnType, reason, notes, customerEmail, customerName } = req.body;
+    const effectiveEmail = req.user?.email || customerEmail;
+    const effectiveName = req.user?.fullName || customerName || 'Valued Patron';
+
+    if (!orderName && !orderId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order reference number is required to process return or exchange.',
+      });
+    }
+
+    if (!effectiveEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer email is required.',
+      });
+    }
+
+    // Record return in user document in database
+    if (effectiveEmail) {
+      await User.findOneAndUpdate(
+        { email: effectiveEmail.toLowerCase().trim() },
+        {
+          $addToSet: {
+            returnedOrders: {
+              orderId: String(orderId || ''),
+              orderName: String(orderName || ''),
+              type: String(returnType || 'RETURN'),
+              reason: String(reason || 'Customer requested return/exchange'),
+              notes: String(notes || ''),
+              requestedAt: new Date(),
+            },
+          },
+        }
+      ).catch((err) => console.warn('[Return Order Save Warning]', err.message));
+    }
+
+    // Dispatch return email notifications to admin and customer
+    await sendOrderReturnEmail({
+      customerEmail: effectiveEmail,
+      customerName: effectiveName,
+      orderName: orderName || orderId,
+      returnType: returnType || 'RETURN',
+      reason: reason || 'Customer requested return/exchange',
+      notes: notes || '',
+    });
+
+    // Automatically tag order in Shopify Admin UI as RETURN_REQUESTED (or EXCHANGE_REQUESTED)
+    tagOrderAsReturnRequested({
+      orderId,
+      orderName,
+      returnType: returnType || 'RETURN',
+      reason,
+      notes,
+    }).catch((err) => console.warn('[Shopify Auto-Tag Return Warning]', err.message));
+
+    const typeMsg = returnType === 'EXCHANGE' ? 'Exchange' : 'Return';
+    return res.status(200).json({
+      success: true,
+      message: `${typeMsg} request for order ${orderName || orderId} has been successfully submitted. You will receive an email confirmation and our concierge will arrange your doorstep pickup shortly.`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * @desc    Public Order Tracking by Order Number & Email/Phone
  * @route   POST /api/orders/track
  * @access  Public
@@ -349,5 +445,6 @@ export default {
   confirmOrderEmail,
   handleShopifyOrderWebhook,
   cancelOrderRequest,
+  returnOrderRequest,
   trackOrderPublic,
 };

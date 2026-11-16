@@ -687,6 +687,91 @@ export const sendOrderCancellationEmail = async ({
 };
 
 /**
+ * Dispatch return / exchange request alert email to Store Admin and customer acknowledgement
+ */
+export const sendOrderReturnEmail = async ({
+  customerEmail,
+  customerName = 'Valued Patron',
+  orderName,
+  returnType = 'RETURN',
+  reason = 'Customer requested return/exchange',
+  notes = '',
+}) => {
+  const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER || 'velmora.shop.india.2026@gmail.com';
+  const typeLabel = returnType === 'EXCHANGE' ? 'Exchange (Size / Color Swap)' : 'Return (Doorstep Return & Refund)';
+
+  const adminSubject = `[${returnType === 'EXCHANGE' ? 'Exchange' : 'Return'} Request Alert] ${orderName} - ${customerEmail}`;
+  const adminHtml = wrapInEmailLayout({
+    previewText: `${returnType} requested for ${orderName}`,
+    contentHtml: `
+      <h2 style="color: #6B1D4F; font-family: 'Playfair Display', Georgia, serif; font-size: 20px; margin: 0 0 12px;">
+        ${typeLabel} Request Received
+      </h2>
+      <p style="color: #4E3E4F; font-size: 14px; line-height: 1.6;">
+        A customer has submitted a request for order <strong>${orderName}</strong>. Please review their reason, contact the patron, and schedule reverse courier pickup in Shopify.
+      </p>
+      <div style="border-left: 4px solid #6B1D4F; background: #FAF6F0; padding: 16px; margin: 20px 0; border-radius: 4px;">
+        <p style="margin: 0 0 8px; font-size: 14px;"><strong>Order ID:</strong> ${orderName}</p>
+        <p style="margin: 0 0 8px; font-size: 14px;"><strong>Customer:</strong> ${customerName} (<a href="mailto:${customerEmail}" style="color: #6B1D4F;">${customerEmail}</a>)</p>
+        <p style="margin: 0 0 8px; font-size: 14px;"><strong>Request Type:</strong> ${typeLabel}</p>
+        <p style="margin: 0 0 8px; font-size: 14px;"><strong>Reason:</strong> ${reason}</p>
+        ${notes ? `<p style="margin: 0; font-size: 14px;"><strong>Customer Notes / Requested Size:</strong> ${notes}</p>` : ''}
+      </div>
+      <p style="font-size: 13px; color: #6A5B6C;">
+        You can view this order and tags directly in your <a href="https://admin.shopify.com" style="color: #6B1D4F; font-weight: 600;">Shopify Orders Dashboard</a>.
+      </p>
+    `,
+  });
+
+  const customerSubject = `Your ${returnType === 'EXCHANGE' ? 'Exchange' : 'Return'} Request for Order ${orderName} — Velmora`;
+  const customerHtml = wrapInEmailLayout({
+    previewText: `We have received your ${returnType.toLowerCase()} request for order ${orderName}`,
+    contentHtml: `
+      <h2 style="color: #2B0F3A; font-family: 'Playfair Display', Georgia, serif; font-size: 20px; margin: 0 0 12px;">
+        ${returnType === 'EXCHANGE' ? 'Exchange' : 'Return'} Request Received
+      </h2>
+      <p style="color: #4E3E4F; font-size: 14px; line-height: 1.6;">
+        Dear ${customerName},
+      </p>
+      <p style="color: #4E3E4F; font-size: 14px; line-height: 1.6;">
+        We have received your request for <strong>${orderName}</strong> (${typeLabel}). Our concierge team is reviewing the details and will schedule reverse courier pickup at your delivery address within <strong>24 to 48 hours</strong>.
+      </p>
+      <div style="margin: 20px 0; padding: 16px; background: #FCF9FB; border: 1px solid #EBE4DA; border-radius: 4px;">
+        <p style="margin: 0 0 6px; font-size: 13px;"><strong>Order Reference:</strong> ${orderName}</p>
+        <p style="margin: 0 0 6px; font-size: 13px;"><strong>Request Type:</strong> ${typeLabel}</p>
+        <p style="margin: 0 0 6px; font-size: 13px;"><strong>Reason:</strong> ${reason}</p>
+        ${notes ? `<p style="margin: 0; font-size: 13px;"><strong>Details Provided:</strong> ${notes}</p>` : ''}
+      </div>
+      <div style="background: #F5EFEB; padding: 12px 16px; border-radius: 4px; margin: 15px 0;">
+        <p style="margin: 0; font-size: 12px; color: #6B5B6C; line-height: 1.5;">
+          <strong>Quick Reminder:</strong> Please keep the garment unworn with original luxury tags and keepsake box intact for a seamless reverse pickup verification.
+        </p>
+      </div>
+      <p style="color: #6A5B6C; font-size: 13px; line-height: 1.6;">
+        Need instant assistance? Feel free to reply directly to this email or reach us at <a href="mailto:${adminEmail}" style="color: #6B1D4F;">${adminEmail}</a>.
+      </p>
+    `,
+  });
+
+  await Promise.allSettled([
+    dispatchEmail({
+      to: adminEmail,
+      subject: adminSubject,
+      html: adminHtml,
+      text: `${returnType} requested for ${orderName} by ${customerEmail}. Reason: ${reason}. Notes: ${notes}`,
+    }),
+    dispatchEmail({
+      to: customerEmail,
+      subject: customerSubject,
+      html: customerHtml,
+      text: `Dear ${customerName},\n\nWe have received your ${returnType.toLowerCase()} request for order ${orderName}.\n\nWarm regards,\nVelmora Concierge Team`,
+    }),
+  ]);
+
+  return { success: true };
+};
+
+/**
  * Dispatch alert email to Store Admin when a new customer registers
  */
 export const sendNewUserAdminAlert = async ({ fullName, email, phoneNumber, phone }) => {
@@ -740,5 +825,6 @@ export default {
   sendPasswordResetEmail,
   sendOrderConfirmationEmail,
   sendOrderCancellationEmail,
+  sendOrderReturnEmail,
   sendTestEmailDiagnostic,
 };
