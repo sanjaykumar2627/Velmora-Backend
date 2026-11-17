@@ -61,9 +61,10 @@ export async function tagOrderAsCancellationRequested({ orderId, orderName, reas
     // 1. Determine numeric ID or lookup by order name
     let numericId = null;
     if (orderId) {
-      const match = String(orderId).match(/\d+/g);
+      const cleanId = String(orderId).split('?')[0];
+      const match = cleanId.match(/\d+/g);
       if (match && match.length > 0) {
-        // Take the longest continuous digit sequence (often the full Shopify Order ID)
+        // Take the longest continuous digit sequence from the resource ID path
         numericId = match.reduce((a, b) => (a.length >= b.length ? a : b));
       }
     }
@@ -162,7 +163,8 @@ export async function tagOrderAsReturnRequested({ orderId, orderName, returnType
     // 1. Determine numeric ID or lookup by order name
     let numericId = null;
     if (orderId) {
-      const match = String(orderId).match(/\d+/g);
+      const cleanId = String(orderId).split('?')[0];
+      const match = cleanId.match(/\d+/g);
       if (match && match.length > 0) {
         numericId = match.reduce((a, b) => (a.length >= b.length ? a : b));
       }

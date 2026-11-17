@@ -320,12 +320,16 @@ export const cancelOrderRequest = async (req, res, next) => {
     });
 
     // Automatically tag order in Shopify Admin UI as CANCEL_REQUESTED and record reason in Notes
-    tagOrderAsCancellationRequested({
-      orderId,
-      orderName,
-      reason,
-      notes,
-    }).catch((err) => console.warn('[Shopify Auto-Tag Warning]', err.message));
+    try {
+      await tagOrderAsCancellationRequested({
+        orderId,
+        orderName,
+        reason,
+        notes,
+      });
+    } catch (tagErr) {
+      console.warn('[Shopify Auto-Tag Warning]', tagErr.message);
+    }
 
     return res.status(200).json({
       success: true,
@@ -391,13 +395,17 @@ export const returnOrderRequest = async (req, res, next) => {
     });
 
     // Automatically tag order in Shopify Admin UI as RETURN_REQUESTED (or EXCHANGE_REQUESTED)
-    tagOrderAsReturnRequested({
-      orderId,
-      orderName,
-      returnType: returnType || 'RETURN',
-      reason,
-      notes,
-    }).catch((err) => console.warn('[Shopify Auto-Tag Return Warning]', err.message));
+    try {
+      await tagOrderAsReturnRequested({
+        orderId,
+        orderName,
+        returnType: returnType || 'RETURN',
+        reason,
+        notes,
+      });
+    } catch (tagErr) {
+      console.warn('[Shopify Auto-Tag Return Warning]', tagErr.message);
+    }
 
     const typeMsg = returnType === 'EXCHANGE' ? 'Exchange' : 'Return';
     return res.status(200).json({

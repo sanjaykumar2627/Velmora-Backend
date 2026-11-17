@@ -101,7 +101,11 @@ app.get('/api/health', (req, res) => {
     },
     shopify: {
       domain: process.env.SHOPIFY_STORE_DOMAIN || 'etujp6-nv.myshopify.com',
-      configured: Boolean(process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN),
+      storefrontConfigured: Boolean(process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN),
+      adminApiConfigured: Boolean(
+        process.env.SHOPIFY_ADMIN_ACCESS_TOKEN ||
+          (process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET)
+      ),
     },
   });
 });
