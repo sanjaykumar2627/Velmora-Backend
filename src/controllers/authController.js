@@ -208,30 +208,36 @@ export const verifyOtp = async (req, res, next) => {
       isVerified: true,
     });
 
-    // Auto-create & link customer in Shopify Storefront (non-blocking)
-    try {
-      const nameParts = (user.fullName || '').trim().split(' ');
-      const firstName = nameParts[0] || '';
-      const lastName = nameParts.slice(1).join(' ') || firstName;
-      const shopifyCustomer = await customerCreate({
-        email: normalizedEmail,
-        password: pending.password,
-        firstName,
-        lastName,
-      });
-      if (shopifyCustomer?.customer?.id) {
-        user.shopifyCustomerId = shopifyCustomer.customer.id;
-      }
-      const authRes = await customerAccessTokenCreate(normalizedEmail, pending.password);
-      if (authRes?.customerAccessToken?.accessToken) {
-        user.shopifyCustomerAccessToken = authRes.customerAccessToken.accessToken;
-      }
-    } catch (shopifySyncErr) {
-      console.warn('[Shopify Customer Sync Warning]', shopifySyncErr.message);
-    }
-
-    // Save into database
+    // Save into database immediately so user doesn't wait
     await user.save();
+
+    // Auto-create & link customer in Shopify Storefront in background (truly non-blocking)
+    (async () => {
+      try {
+        const nameParts = (user.fullName || '').trim().split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || firstName;
+        const shopifyCustomer = await customerCreate({
+          email: normalizedEmail,
+          password: pending.password,
+          firstName,
+          lastName,
+        });
+        const updates = {};
+        if (shopifyCustomer?.customer?.id) {
+          updates.shopifyCustomerId = shopifyCustomer.customer.id;
+        }
+        const authRes = await customerAccessTokenCreate(normalizedEmail, pending.password);
+        if (authRes?.customerAccessToken?.accessToken) {
+          updates.shopifyCustomerAccessToken = authRes.customerAccessToken.accessToken;
+        }
+        if (Object.keys(updates).length > 0) {
+          await User.findByIdAndUpdate(user._id, updates);
+        }
+      } catch (shopifySyncErr) {
+        console.warn('[Shopify Customer Sync Warning]', shopifySyncErr.message);
+      }
+    })();
 
     // 4. Remove pending registration
     clearPendingRegistration(normalizedEmail, res);
@@ -393,32 +399,41 @@ export const loginUser = async (req, res, next) => {
       });
     }
 
-    // 4. Check/Refresh Shopify Customer Token in background if supported
-    try {
-      let shopifyAuth = await customerAccessTokenCreate(normalizedEmail, password);
-      // If customer doesn't exist yet on Shopify, auto-create them and re-authenticate
-      if (!shopifyAuth?.customerAccessToken?.accessToken) {
-        const nameParts = (user.fullName || '').trim().split(' ');
-        const firstName = nameParts[0] || 'Customer';
-        const lastName = nameParts.slice(1).join(' ') || firstName;
-        const newCustomer = await customerCreate({
-          email: normalizedEmail,
-          password,
-          firstName,
-          lastName,
-        });
-        if (newCustomer?.customer?.id) {
-          user.shopifyCustomerId = newCustomer.customer.id;
+    // 4. Check/Refresh Shopify Customer Token in background (non-blocking so login is instant)
+    (async () => {
+      try {
+        let shopifyAuth = await customerAccessTokenCreate(normalizedEmail, password);
+        // If customer doesn't exist yet on Shopify, auto-create them and re-authenticate
+        if (!shopifyAuth?.customerAccessToken?.accessToken) {
+          const nameParts = (user.fullName || '').trim().split(' ');
+          const firstName = nameParts[0] || 'Customer';
+          const lastName = nameParts.slice(1).join(' ') || firstName;
+          const newCustomer = await customerCreate({
+            email: normalizedEmail,
+            password,
+            firstName,
+            lastName,
+          });
+          const updates = {};
+          if (newCustomer?.customer?.id) {
+            updates.shopifyCustomerId = newCustomer.customer.id;
+          }
+          shopifyAuth = await customerAccessTokenCreate(normalizedEmail, password);
+          if (shopifyAuth?.customerAccessToken?.accessToken) {
+            updates.shopifyCustomerAccessToken = shopifyAuth.customerAccessToken.accessToken;
+          }
+          if (Object.keys(updates).length > 0) {
+            await User.findByIdAndUpdate(user._id, updates);
+          }
+        } else if (shopifyAuth?.customerAccessToken?.accessToken && shopifyAuth.customerAccessToken.accessToken !== user.shopifyCustomerAccessToken) {
+          await User.findByIdAndUpdate(user._id, {
+            shopifyCustomerAccessToken: shopifyAuth.customerAccessToken.accessToken,
+          });
         }
-        shopifyAuth = await customerAccessTokenCreate(normalizedEmail, password);
+      } catch {
+        // Ignore background Shopify customer auth sync error on login
       }
-      if (shopifyAuth?.customerAccessToken?.accessToken) {
-        user.shopifyCustomerAccessToken = shopifyAuth.customerAccessToken.accessToken;
-        await user.save({ validateBeforeSave: false });
-      }
-    } catch {
-      // Ignore Shopify customer auth sync error on login
-    }
+    })();
 
     // 5. Generate JWT & set secure cookie
     const token = generateTokenAndSetCookie(res, user._id, user.role);
